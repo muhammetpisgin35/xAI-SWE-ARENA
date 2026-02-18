@@ -1,6 +1,7 @@
 import random
 import json
 import os
+import re  # For city name validation (letters/spaces only)
 from flask import Flask, request, render_template_string
 
 def get_weather_suggestions(temperature, condition):
@@ -110,7 +111,8 @@ def add_to_favorites(data, city):
 
 
 # HTML template for the clean, professional weather page (inline for single-file app)
-# Features: form for city input (submit on Enter), styled results display
+# Features: form for city input (submit on Enter), styled results display.
+# Enhanced with validation: only letters/spaces allowed for city names; warning for invalid (no weather data shown).
 WEATHER_PAGE_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -153,6 +155,9 @@ WEATHER_PAGE_TEMPLATE = """
             border-radius: 5px;
             font-size: 16px;
         }
+        input.invalid {
+            border-color: #e74c3c;  /* Red border for invalid */
+        }
         button {
             padding: 10px 20px;
             background-color: #3498db;
@@ -180,22 +185,58 @@ WEATHER_PAGE_TEMPLATE = """
             font-weight: bold;
             color: #27ae60;
         }
+        .error {
+            color: #e74c3c;  /* Red for warnings */
+            background: #fdf2f2;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
         footer {
             margin-top: 20px;
             font-size: 12px;
             color: #777;
         }
+        /* JS for real-time feedback */
+        .input-hint {
+            font-size: 12px;
+            color: #777;
+            margin-top: 5px;
+        }
     </style>
+    <script>
+        // Client-side: Warn/prevent non-letters on input (real-time UX)
+        // Only letters and spaces (e.g., "New York"); auto-strip + alert for invalid
+        function validateCityInput(input) {
+            const validPattern = /^[A-Za-z ]*$/;  // Explicit space, no escape issues
+            if (!validPattern.test(input.value)) {
+                input.value = input.value.replace(/[^A-Za-z ]/g, '');  // Auto-strip invalid chars
+                alert('Invalid character detected! City names can only contain letters and spaces (e.g., no numbers or special chars).');  // Warn user
+                input.classList.add('invalid');
+            } else {
+                input.classList.remove('invalid');
+            }
+        }
+    </script>
 </head>
 <body>
     <div class="container">
         <h1>Weather Forecast</h1>
-        <form method="post" action="/">
-            <input type="text" name="city" placeholder="Enter city name (e.g., London)" required autofocus>
+        <form method="post" action="/" onsubmit="return true;">
+            <input type="text" name="city" placeholder="Enter city name (e.g., London)" required autofocus
+                   pattern="[A-Za-z ]+" title="Only letters and spaces allowed (e.g., no numbers or special chars like ! or 123)"
+                   oninput="validateCityInput(this)">
             <!-- Submit on Enter keypress; button for accessibility -->
             <button type="submit">Get Weather</button>
+            <div class="input-hint">City names: letters and spaces only (e.g., "New York")</div>
         </form>
-        {% if weather %}
+        {% if error %}
+        <!-- Show warning for invalid input; no weather data generated -->
+        <div class="error">Invalid input: '{{ error.city }}' contains numbers/special characters. Please enter only letters and spaces.</div>
+        {% endif %}
+        {% if weather is not none and weather %}
+        <!-- Only display professional data for valid city (stricter Jinja check ensures no render on None/invalid) -->
         <div class="weather-info">
             <p><strong>City:</strong> {{ weather.city }}</p>
             <p><strong>Condition:</strong> {{ weather.condition }}</p>
@@ -304,15 +345,29 @@ app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'POST'])
 def weather_page():
-    """Render the professional weather page. Handles city input via form (submit on Enter)."""
+    """
+    Render the clean/professional weather page. Handles city input via form (submit on Enter).
+    Added validation: City names only letters + spaces (client-side JS/HTML5 + server-side regex).
+    - Invalid (numbers/special chars): Show warning, NO weather data generated.
+    - Valid: Generate/display full data (temp, condition, suggestions, etc.) + retry capability via form.
+    Web does not affect CLI/JSON features.
+    """
     weather = None
+    error = None
     if request.method == 'POST':
         city = request.form.get('city', '').strip()
         if city:
-            # Generate and display all data for the city (web doesn't affect JSON for simplicity)
-            weather = generate_weather_data(city)
-    # Use render_template_string for inline HTML/CSS
-    return render_template_string(WEATHER_PAGE_TEMPLATE, weather=weather)
+            # Server-side validation: only letters and spaces (e.g., "New York" ok, "NYC123" or "NYC!" invalid)
+            # Use explicit [A-Za-z ] for reliability (matches letters + space; ^$ anchors full string)
+            if re.match(r'^[A-Za-z ]+$', city):
+                # Valid: generate and display all data (temp, condition, suggestions, etc.)
+                weather = generate_weather_data(city)
+            else:
+                # Invalid: warn user, do not provide weather/temp/suggestions
+                error = {"city": city}
+    # Pass to template for conditional rendering (error vs. weather data)
+    # Use render_template_string for inline HTML/CSS (stricter {% if %} ensures clean separation)
+    return render_template_string(WEATHER_PAGE_TEMPLATE, weather=weather, error=error)
 
 if __name__ == "__main__":
     # Default: Run CLI menu loop (with JSON persistence).
