@@ -1,7 +1,10 @@
 {
-    "favorites": [],
+    "favorites": [
+        "London",
+        "Abu Dhabi"
+    ],
     "search_history": [
-        "MhMMd"
+        "Abu Dhabi"
     ],
     "temp_unit": "C"
 }

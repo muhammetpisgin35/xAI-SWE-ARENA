@@ -362,29 +362,38 @@ def index():
     display_temp = None
     temp_unit = data.get("temp_unit", "C")
 
+    # Preserve last weather result in session to prevent re-randomization on actions like "Add to Favorites" or toggle
+    # (fixes bug where fav button changed weather options; weather only re-generates on explicit search)
+    if 'last_weather' in session:
+        weather = session['last_weather']
+        display_temp = get_display_temp(weather['temperature'], temp_unit) if weather else None
+
     if request.method == 'POST':
         action = request.form.get('action')
         city = request.form.get('city', '').strip()
 
-        if action == 'search' or request.form.get('city'):  # Search weather
-            if city:
-                # Validation: only letters/spaces; warn if invalid, no data
-                if re.match(r'^[A-Za-z ]+$', city):
-                    weather = generate_weather_data(city)  # Includes suggestions
-                    # Temp display based on unit
-                    display_temp = get_display_temp(weather['temperature'], temp_unit)
-                    # Auto-add to history, save to JSON
-                    data = add_to_history(data, city)
-                    save_data(data)
-                else:
-                    # Invalid: warning, no weather/suggestions
-                    error = {"city": city}
+        if action == 'search' and city:  # Strict: ONLY trigger search (and re-random) on explicit search action; prevents side-effects from hidden 'city' in other forms (e.g., add_fav)
+            # Validation: only letters/spaces; warn if invalid, no data
+            if re.match(r'^[A-Za-z ]+$', city):
+                weather = generate_weather_data(city)  # Includes suggestions
+                # Temp display based on unit
+                display_temp = get_display_temp(weather['temperature'], temp_unit)
+                # Auto-add to history, save to JSON
+                data = add_to_history(data, city)
+                save_data(data)
+                # Persist weather in session for subsequent actions (e.g., add_fav/toggle keeps same result, no change)
+                session['last_weather'] = weather
+                session.modified = True
+            else:
+                # Invalid: warning, no weather/suggestions; clear last if needed
+                error = {"city": city}
+                session.pop('last_weather', None)
         elif action == 'toggle_temp':  # C/F toggle
             data, temp_unit = toggle_temp_unit(data)
             save_data(data)  # Persist unit
-            if weather:  # Recompute display if result active
+            if weather:  # Recompute display from preserved weather (no re-random)
                 display_temp = get_display_temp(weather['temperature'], temp_unit)
-        elif action == 'add_fav' and city:  # Add to favorites
+        elif action == 'add_fav' and city:  # Add to favorites (no weather change)
             data = add_to_favorites(data, city)
             save_data(data)
         elif action == 'clear_history':  # Clear history
