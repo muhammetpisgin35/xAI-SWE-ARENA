@@ -2,7 +2,7 @@ import random
 import json
 import os
 import re  # For city name validation (letters/spaces only)
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, session  # Added session for temp unit toggle (C/F)
 
 def get_weather_suggestions(temperature, condition):
     """
@@ -65,25 +65,28 @@ def generate_weather_data(city):
     }
 
 
-# JSON persistence for favorites and search history (as requested)
+# JSON persistence for favorites, search history, and temp_unit (C/F toggle) (as requested)
 JSON_FILE = "favorites.json"
-DEFAULT_DATA = {"favorites": [], "search_history": []}
+# DEFAULT_DATA extended for temp_unit; load_data handles defaults
+DEFAULT_DATA = {"favorites": [], "search_history": [], "temp_unit": "C"}
 
 
 def load_data():
-    """Load favorites and search_history from JSON file on startup. Create defaults if not exists."""
+    """Load favorites, search_history, and temp_unit (C/F) from JSON file on startup. Create defaults if not exists."""
     if os.path.exists(JSON_FILE):
         try:
             with open(JSON_FILE, "r") as f:
                 data = json.load(f)
-                # Ensure structure and limit history to last 5
+                # Ensure structure, limit history to last 5, default temp_unit='C'
                 data.setdefault("favorites", [])
                 data.setdefault("search_history", [])
+                data.setdefault("temp_unit", "C")
                 data["search_history"] = data["search_history"][:5]
                 return data
         except (json.JSONDecodeError, IOError):
             pass  # Fall back to defaults on error
-    return DEFAULT_DATA.copy()
+    # DEFAULT_DATA extended for new feature
+    return {**DEFAULT_DATA, "temp_unit": "C"}.copy()
 
 
 def save_data(data):
@@ -110,109 +113,65 @@ def add_to_favorites(data, city):
     return data
 
 
-# HTML template for the clean, professional weather page (inline for single-file app)
-# Features: form for city input (submit on Enter), styled results display.
-# Enhanced with validation: only letters/spaces allowed for city names; warning for invalid (no weather data shown).
+# Helpers for C/F toggle (new feature)
+def celsius_to_fahrenheit(temp_c):
+    """Convert Celsius to Fahrenheit for toggle display."""
+    return round(temp_c * 9 / 5 + 32, 1)
+
+
+def toggle_temp_unit(data):
+    """Toggle between C and F in data (persisted to JSON); returns updated data and current unit."""
+    data["temp_unit"] = "F" if data.get("temp_unit", "C") == "C" else "C"
+    return data, data["temp_unit"]
+
+
+def get_display_temp(temp_c, unit):
+    """Return temp string with unit (C or F conversion)."""
+    if unit == "F":
+        return f"{celsius_to_fahrenheit(temp_c)}°F"
+    return f"{temp_c}°C"
+
+
+# Update JSON helpers to support temp_unit persistence (C/F toggle state)
+# (extends load_data/save_data without breaking CLI; DEFAULT_DATA updated implicitly)
+
+
+# Unified inline HTML template for the full web app (simple/professional interface incorporating all features)
+# - Search form with validation (letters/spaces only).
+# - C/F toggle, weather results (with suggestions/temp), favorites, history.
+# - Buttons for actions; reads/writes favorites.json.
 WEATHER_PAGE_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weather App - Professional Forecast</title>
+    <title>Weather App - Full Features</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f0f8ff;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-        }
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 20px;
-        }
-        form {
-            margin-bottom: 20px;
-        }
-        input[type="text"] {
-            padding: 10px;
-            width: 70%;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-        input.invalid {
-            border-color: #e74c3c;  /* Red border for invalid */
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #3498db;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #2980b9;
-        }
-        .weather-info {
-            background: #e8f4f8;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 20px;
-            text-align: left;
-        }
-        .weather-info p {
-            margin: 10px 0;
-            font-size: 18px;
-        }
-        .suggestion {
-            font-weight: bold;
-            color: #27ae60;
-        }
-        .error {
-            color: #e74c3c;  /* Red for warnings */
-            background: #fdf2f2;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-            font-weight: bold;
-        }
-        footer {
-            margin-top: 20px;
-            font-size: 12px;
-            color: #777;
-        }
-        /* JS for real-time feedback */
-        .input-hint {
-            font-size: 12px;
-            color: #777;
-            margin-top: 5px;
-        }
+        body { font-family: Arial, sans-serif; background-color: #f0f8ff; color: #333; margin: 0; padding: 20px; display: flex; justify-content: center; min-height: 100vh; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 600px; width: 100%; }
+        h1, h2 { color: #2c3e50; }
+        form { margin-bottom: 20px; }
+        input[type="text"] { padding: 10px; width: 60%; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+        input.invalid { border-color: #e74c3c; }
+        button { padding: 10px 20px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 5px; }
+        button:hover { background-color: #2980b9; }
+        button.danger { background-color: #e74c3c; }
+        button.danger:hover { background-color: #c0392b; }
+        .section { background: #e8f4f8; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: left; }
+        .error { color: #e74c3c; background: #fdf2f2; padding: 10px; border-radius: 5px; margin: 10px 0; font-weight: bold; }
+        .input-hint { font-size: 12px; color: #777; margin-top: 5px; }
+        ul { list-style: none; padding: 0; }
+        li { margin: 5px 0; }
+        footer { margin-top: 20px; font-size: 12px; color: #777; text-align: center; }
     </style>
     <script>
-        // Client-side: Warn/prevent non-letters on input (real-time UX)
-        // Only letters and spaces (e.g., "New York"); auto-strip + alert for invalid
+        // Client-side validation: only letters/spaces; auto-strip + alert for invalid chars
         function validateCityInput(input) {
-            const validPattern = /^[A-Za-z ]*$/;  // Explicit space, no escape issues
+            const validPattern = /^[A-Za-z ]*$/;
             if (!validPattern.test(input.value)) {
-                input.value = input.value.replace(/[^A-Za-z ]/g, '');  // Auto-strip invalid chars
-                alert('Invalid character detected! City names can only contain letters and spaces (e.g., no numbers or special chars).');  // Warn user
+                input.value = input.value.replace(/[^A-Za-z ]/g, '');
+                alert('Invalid character! Only letters and spaces (e.g., "New York").');
                 input.classList.add('invalid');
             } else {
                 input.classList.remove('invalid');
@@ -222,29 +181,70 @@ WEATHER_PAGE_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>Weather Forecast</h1>
+        <h1>Weather App</h1>
+        <!-- C/F Toggle (new feature, persisted in JSON) -->
+        <form method="post" action="/">
+            <input type="hidden" name="action" value="toggle_temp">
+            <button type="submit">Toggle Temp: {{ temp_unit }}°</button>
+        </form>
+        <!-- City Search Form (with validation) -->
         <form method="post" action="/" onsubmit="return true;">
+            <input type="hidden" name="action" value="search">
             <input type="text" name="city" placeholder="Enter city name (e.g., London)" required autofocus
-                   pattern="[A-Za-z ]+" title="Only letters and spaces allowed (e.g., no numbers or special chars like ! or 123)"
+                   pattern="[A-Za-z ]+" title="Only letters and spaces allowed (no numbers/special chars)"
                    oninput="validateCityInput(this)">
-            <!-- Submit on Enter keypress; button for accessibility -->
             <button type="submit">Get Weather</button>
-            <div class="input-hint">City names: letters and spaces only (e.g., "New York")</div>
+            <div class="input-hint">Letters and spaces only (e.g., "New York")</div>
         </form>
         {% if error %}
-        <!-- Show warning for invalid input; no weather data generated -->
-        <div class="error">Invalid input: '{{ error.city }}' contains numbers/special characters. Please enter only letters and spaces.</div>
+        <!-- Validation warning: no weather data for invalid -->
+        <div class="error">Invalid input: '{{ error.city }}' - only letters/spaces allowed. No data generated.</div>
         {% endif %}
-        {% if weather is not none and weather %}
-        <!-- Only display professional data for valid city (stricter Jinja check ensures no render on None/invalid) -->
-        <div class="weather-info">
-            <p><strong>City:</strong> {{ weather.city }}</p>
+        {% if weather %}
+        <!-- Weather results with suggestions and display temp (C/F) -->
+        <div class="section">
+            <h2>Weather for {{ weather.city }}</h2>
             <p><strong>Condition:</strong> {{ weather.condition }}</p>
-            <p><strong>Temperature:</strong> {{ weather.temperature }}°C</p>
-            <p class="suggestion">Suggestion: Wear {{ weather.clothing }} and consider {{ weather.activity }}.</p>
+            <p><strong>Temperature:</strong> {{ display_temp }}</p>
+            <p><strong>Suggestion:</strong> Wear {{ weather.clothing }} and consider {{ weather.activity }}.</p>
+            <form method="post" action="/">
+                <input type="hidden" name="action" value="add_fav">
+                <input type="hidden" name="city" value="{{ weather.city }}">
+                <button type="submit">Add to Favorites</button>
+            </form>
         </div>
         {% endif %}
-        <footer>Powered by random weather generator | Temp range: -5°C to 35°C</footer>
+        <!-- Favorites section -->
+        <div class="section">
+            <h2>Favorites</h2>
+            {% if favorites %}
+            <ul>
+                {% for city in favorites %}
+                <li>{{ city }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p>No favorites yet.</p>
+            {% endif %}
+        </div>
+        <!-- Search history section (last 5) -->
+        <div class="section">
+            <h2>Search History (Last 5)</h2>
+            {% if history %}
+            <ul>
+                {% for city in history %}
+                <li>{{ city }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p>No history yet.</p>
+            {% endif %}
+            <form method="post" action="/">
+                <input type="hidden" name="action" value="clear_history">
+                <button type="submit" class="danger">Clear History</button>
+            </form>
+        </div>
+        <footer>Powered by Flask | Persistence: favorites.json | Temp: {{ temp_unit }}</footer>
     </div>
 </body>
 </html>
@@ -339,38 +339,75 @@ def main():
             print("Invalid choice. Please enter 1-5.\n")
 
 
-# Flask web app for the clean weather page (kept intact, no breaking changes)
-# Run separately if needed by calling weather_page() logic or directly via app.run
+# Unified Flask web app incorporating all features:
+# - Weather search + suggestions + validation.
+# - C/F temp toggle (persisted).
+# - Favorites + search history (via favorites.json).
+# - Simple inline HTML interface.
+# - Defaults to server at http://localhost:5000 (CLI available via main()).
+# App reads/writes favorites.json for persistence.
 app = Flask(__name__)
+app.secret_key = "weather_app_secret"  # For session if extended; not heavily used here
 
 @app.route('/', methods=['GET', 'POST'])
-def weather_page():
+def index():
     """
-    Render the clean/professional weather page. Handles city input via form (submit on Enter).
-    Added validation: City names only letters + spaces (client-side JS/HTML5 + server-side regex).
-    - Invalid (numbers/special chars): Show warning, NO weather data generated.
-    - Valid: Generate/display full data (temp, condition, suggestions, etc.) + retry capability via form.
-    Web does not affect CLI/JSON features.
+    Main web interface at http://localhost:5000.
+    Handles search, actions (toggle, add_fav, clear_history) via POST; renders all data.
+    Uses inline template for simplicity; integrates weather, suggestions, favs/history, validation.
     """
+    data = load_data()  # Load from favorites.json on every request
     weather = None
     error = None
+    display_temp = None
+    temp_unit = data.get("temp_unit", "C")
+
     if request.method == 'POST':
+        action = request.form.get('action')
         city = request.form.get('city', '').strip()
-        if city:
-            # Server-side validation: only letters and spaces (e.g., "New York" ok, "NYC123" or "NYC!" invalid)
-            # Use explicit [A-Za-z ] for reliability (matches letters + space; ^$ anchors full string)
-            if re.match(r'^[A-Za-z ]+$', city):
-                # Valid: generate and display all data (temp, condition, suggestions, etc.)
-                weather = generate_weather_data(city)
-            else:
-                # Invalid: warn user, do not provide weather/temp/suggestions
-                error = {"city": city}
-    # Pass to template for conditional rendering (error vs. weather data)
-    # Use render_template_string for inline HTML/CSS (stricter {% if %} ensures clean separation)
-    return render_template_string(WEATHER_PAGE_TEMPLATE, weather=weather, error=error)
+
+        if action == 'search' or request.form.get('city'):  # Search weather
+            if city:
+                # Validation: only letters/spaces; warn if invalid, no data
+                if re.match(r'^[A-Za-z ]+$', city):
+                    weather = generate_weather_data(city)  # Includes suggestions
+                    # Temp display based on unit
+                    display_temp = get_display_temp(weather['temperature'], temp_unit)
+                    # Auto-add to history, save to JSON
+                    data = add_to_history(data, city)
+                    save_data(data)
+                else:
+                    # Invalid: warning, no weather/suggestions
+                    error = {"city": city}
+        elif action == 'toggle_temp':  # C/F toggle
+            data, temp_unit = toggle_temp_unit(data)
+            save_data(data)  # Persist unit
+            if weather:  # Recompute display if result active
+                display_temp = get_display_temp(weather['temperature'], temp_unit)
+        elif action == 'add_fav' and city:  # Add to favorites
+            data = add_to_favorites(data, city)
+            save_data(data)
+        elif action == 'clear_history':  # Clear history
+            data["search_history"] = []
+            save_data(data)
+
+    # Render simple HTML with all data (favs, history, conditional results/error)
+    # Pass vars for template
+    return render_template_string(
+        WEATHER_PAGE_TEMPLATE,
+        weather=weather,
+        error=error,
+        display_temp=display_temp,
+        favorites=data.get("favorites", []),
+        history=data.get("search_history", []),
+        temp_unit=temp_unit
+    )
+
+# Keep original CLI menu accessible (e.g., python -c "from weather_app import main; main()")
+# Web is now primary for localhost view.
 
 if __name__ == "__main__":
-    # Default: Run CLI menu loop (with JSON persistence).
-    # For web page: comment above and use `app.run(debug=True, port=5001)` instead.
-    # Access web at http://127.0.0.1:5001 if enabled.
-    main()
+    # Run web server for localhost:5000 (all features).
+    # Use 0.0.0.0 for accessibility; debug=True for dev.
+    # CLI/favs/JSON intact.
+    app.run(host="127.0.0.1", port=5000, debug=True)
