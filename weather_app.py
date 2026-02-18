@@ -193,5 +193,5 @@ def weather_page():
 
 if __name__ == "__main__":
     # Run the web app by default (clean page); CLI via python -m if needed
-    # Access at http://127.0.0.1:5000
-    app.run(debug=True)
+    # Access at http://127.0.0.1:5001 (changed to avoid port conflicts in testing)
+    app.run(debug=True, port=5001)
