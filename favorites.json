@@ -1,10 +1,17 @@
 {
     "favorites": [
         "London",
-        "Abu Dhabi"
+        "Abu Dhabi",
+        "Paris",
+        "izmir",
+        "Liverpool"
     ],
     "search_history": [
-        "Abu Dhabi"
+        "Istanbul",
+        "Ankara",
+        "Brigthon",
+        "Liverpool",
+        "izmir"
     ],
     "temp_unit": "C"
 }
