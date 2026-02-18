@@ -1,6 +1,4 @@
 import random
-import json
-import os
 from flask import Flask, request, render_template_string
 
 def get_weather_suggestions(temperature, condition):
@@ -62,51 +60,6 @@ def generate_weather_data(city):
         "clothing": clothing,
         "activity": activity
     }
-
-
-# JSON persistence for favorites and search history (as requested)
-JSON_FILE = "favorites.json"
-DEFAULT_DATA = {"favorites": [], "search_history": []}
-
-
-def load_data():
-    """Load favorites and search_history from JSON file on startup. Create defaults if not exists."""
-    if os.path.exists(JSON_FILE):
-        try:
-            with open(JSON_FILE, "r") as f:
-                data = json.load(f)
-                # Ensure structure and limit history to last 5
-                data.setdefault("favorites", [])
-                data.setdefault("search_history", [])
-                data["search_history"] = data["search_history"][:5]
-                return data
-        except (json.JSONDecodeError, IOError):
-            pass  # Fall back to defaults on error
-    return DEFAULT_DATA.copy()
-
-
-def save_data(data):
-    """Save updated data to JSON file immediately on changes."""
-    try:
-        with open(JSON_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except IOError as e:
-        print(f"Error saving data: {e}")
-
-
-def add_to_history(data, city):
-    """Add city to search history (last 5 unique, most recent first)."""
-    if city and city not in data["search_history"]:
-        data["search_history"].insert(0, city)
-        data["search_history"] = data["search_history"][:5]
-    return data
-
-
-def add_to_favorites(data, city):
-    """Add city to favorites if not already present."""
-    if city and city not in data["favorites"]:
-        data["favorites"].append(city)
-    return data
 
 
 # HTML template for the clean, professional weather page (inline for single-file app)
@@ -210,96 +163,20 @@ WEATHER_PAGE_TEMPLATE = """
 """
 
 
-def show_weather(city):
-    """Display weather, temp, and suggestions for a city (core search logic)."""
-    if not city:
-        print("City name cannot be empty.")
-        return None
-    weather_data = generate_weather_data(city)
-    print(f"\nThe weather in {weather_data['city']} is {weather_data['condition']} with a temperature of {weather_data['temperature']}°C.")
-    print(f"Suggestions: Wear {weather_data['clothing']} and consider {weather_data['activity']}.\n")
-    return weather_data
-
-
-def show_favorites(data):
-    """Option 3: Show favorite cities from JSON."""
-    favorites = data.get("favorites", [])
-    if favorites:
-        print("\nFavorite Cities:")
-        for city in favorites:
-            print(f"- {city}")
-    else:
-        print("\nNo favorite cities yet.")
-    print()
-
-
-def show_history(data):
-    """Option 4: Show search history (last 5 cities) from JSON."""
-    history = data.get("search_history", [])
-    if history:
-        print("\nSearch History (last 5):")
-        for city in history:
-            print(f"- {city}")
-    else:
-        print("\nNo search history yet.")
-    print()
-
-
 def main():
-    """
-    Interactive CLI menu loop (as requested):
-    [1] Search weather for a new city (auto-saves to history).
-    [2] Add last searched city to favorites.
-    [3] Show favorites.
-    [4] Show search history.
-    [5] Exit.
-    Loads/saves JSON on start/change for persistence.
-    """
-    print("Welcome to the Weather App!")
-    data = load_data()  # Load on startup
-    last_searched = None
-
-    while True:
-        print("\nMain Menu:")
-        print("[1] Search weather for a new city")
-        print("[2] Add the last searched city to favorites")
-        print("[3] Show favorite cities")
-        print("[4] Show search history (last 5 cities)")
-        print("[5] Exit the app")
-        choice = input("Enter your choice (1-5): ").strip()
-
-        if choice == "1":
-            # Search weather and update history
-            city = input("Enter a city name: ").strip()
-            weather_data = show_weather(city)
-            if weather_data:
-                data = add_to_history(data, city)  # Auto-save to history
-                last_searched = city
-                save_data(data)  # Save immediately
-        elif choice == "2":
-            # Add last to favorites
-            if last_searched:
-                data = add_to_favorites(data, last_searched)
-                save_data(data)  # Save immediately
-                print(f"Added '{last_searched}' to favorites.\n")
-            else:
-                print("No city searched yet. Use option 1 first.\n")
-        elif choice == "3":
-            # Show favorites
-            show_favorites(data)
-        elif choice == "4":
-            # Show history
-            show_history(data)
-        elif choice == "5":
-            # Exit
-            print("Exiting the app. Goodbye!")
-            break
-        else:
-            print("Invalid choice. Please enter 1-5.\n")
+    # Keep original CLI for backward compatibility/testing
+    # Ask the user for a city name
+    city = input("Enter a city name: ").strip()
+    
+    # Generate weather data
+    data = generate_weather_data(city)
+    
+    # Print the result
+    print(f"The weather in {data['city']} is {data['condition']} with a temperature of {data['temperature']}°C.")
+    print(f"Suggestions: Wear {data['clothing']} and consider {data['activity']}.")
 
 
-# Flask web app for the clean weather page (kept intact, no breaking changes)
-# Run separately if needed by calling weather_page() logic or directly via app.run
+# Flask web app for the clean weather page
 app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'POST'])
@@ -309,13 +186,12 @@ def weather_page():
     if request.method == 'POST':
         city = request.form.get('city', '').strip()
         if city:
-            # Generate and display all data for the city (web doesn't affect JSON for simplicity)
+            # Generate and display all data for the city
             weather = generate_weather_data(city)
     # Use render_template_string for inline HTML/CSS
     return render_template_string(WEATHER_PAGE_TEMPLATE, weather=weather)
 
 if __name__ == "__main__":
-    # Default: Run CLI menu loop (with JSON persistence).
-    # For web page: comment above and use `app.run(debug=True, port=5001)` instead.
-    # Access web at http://127.0.0.1:5001 if enabled.
-    main()
+    # Run the web app by default (clean page); CLI via python -m if needed
+    # Access at http://127.0.0.1:5001 (changed to avoid port conflicts in testing)
+    app.run(debug=True, port=5001)
